@@ -190,13 +190,13 @@ public static void UpdateSubscriptionLineItems(List<Contract> contracttriggernew
 					if(setcontractchgenddate.contains(lcli.sbqq__contract__c) && lcli.sbqq__product__r.family != 'Warranty' && lcli.sbqq__product__r.family != 'Entitlement') //and the contract's id is in the set of id's where end date has changed,
 					{	lcli.sbqq__subscriptionenddate__c = contractchgmap.get(lcli.sbqq__contract__c).EndDate;  //update the term end date on the line item
 						mplineitemidtoconenddate.put(lcli.id,contractchgmap.get(lcli.sbqq__contract__c).EndDate);  //add line item id/new end date to a map for later
-						system.debug('term end date was changed on line item ' +lcli.name);
+						system.debug('term end date was changed on line item ' +lcli.name__c);
 					}
 					
 					if(setcontractchgstartdt.contains(lcli.sbqq__contract__c) && lclichgstartdatevalues.contains(lcli.status__c) &&
 					    lcli.sbqq__product__r.family != 'Warranty' && lcli.sbqq__product__r.family != 'Entitlement')  //if the set of contracts with changed start dates contains the contract id,
 					{   lcli.sbqq__subscriptionstartdate__c = contractchgmap.get(lcli.sbqq__contract__c).StartDate;  
-						system.debug('term start date was changed on line item ' +lcli.name);
+						system.debug('term start date was changed on line item ' +lcli.name__c);
 						mplineitemidtoconstartdt.put(lcli.id, contractchgmap.get(lcli.sbqq__contract__c).StartDate);
 					} //update the start dates on related line items
 
@@ -204,7 +204,7 @@ public static void UpdateSubscriptionLineItems(List<Contract> contracttriggernew
 					
 					if(setcontractchgautornw.contains(lcli.sbqq__contract__c) && lcli.sbqq__product__r.family != 'Warranty' && lcli.sbqq__product__r.family != 'Entitlement')
 					{	lcli.auto_renew__c = contractchgmap.get(lcli.sbqq__contract__c).auto_renew__c;
-					//	system.debug('auto renew was changed on line item ' +lcli.name);
+					//	system.debug('auto renew was changed on line item ' +lcli.name__c);
 					}
 											
 					updlstsub.add(lcli);  //we know some date change has been made here, so add line item to the update list
@@ -220,15 +220,16 @@ public static void UpdateSubscriptionLineItems(List<Contract> contracttriggernew
 		system.debug('queried list entllst size is ' +entllst.size());
 		
 		//add all the legacy service contract names to a set for comparison later
-		if(test.isrunningTest())
-		{ legacynames.add('Legacy');  }
-		else
-		{
-			for(Legacy_Service_Contract_Names__c leg : legacyscnames)
-			{  legacynames.add(leg.service_contract_names__c);  
-			   system.debug('legacy name added to set is ' +leg.service_contract_names__c);
-			}
+		//shawks 20190830: BUG-00947 - Setting Legacy custom settting values in test class now - comment out IF statement
+		//if(test.isrunningTest())
+		//{ legacynames.add('Legacy');  }
+		//else
+		//{
+		for(Legacy_Service_Contract_Names__c leg : legacyscnames)
+		{  legacynames.add(leg.service_contract_names__c);  
+		   system.debug('legacy name added to set is ' +leg.service_contract_names__c);
 		}
+		//}
 		
 		//loop through entitlements.  if the entitlement related line item id is found in the map of line items that had end date changes,
 		//update the end date on the entitlement.  If the related service contract name is found in the legacy name set, update the end date
@@ -273,36 +274,40 @@ public static void UpdateSubscriptionLineItems(List<Contract> contracttriggernew
 				  	if(mpnewconstartdt.size() > 0 && mpnewconstartdt.containskey(entl.subscription__r.sbqq__contract__c))
 				  		{ constartdate = mpnewconstartdt.get(entl.subscription__r.sbqq__contract__c).StartDate;  }
 				  
-				  		if(contractchgmap.size() > 0 && contractchgmap.containskey(entl.subscription__r.sbqq__contract__c))
+				  	if(contractchgmap.size() > 0 && contractchgmap.containskey(entl.subscription__r.sbqq__contract__c))
 				  		{ constartdate = contractchgmap.get(entl.subscription__r.sbqq__contract__c).StartDate;  }
 
-				  		if(constartdate != null)
-				  		{
-							Integer terminmonths = 0;
+				  	if(constartdate != null)
+				  	{
+						Integer terminmonths = 0;
 					
-							if(entl.ServiceContract.term != null)
+						if(entl.ServiceContract.term != null)
 							{  terminmonths = Integer.valueof(entl.ServiceContract.term);  }
-							else
-							{  terminmonths = 3;  //if we have to set term to 3 months because of no term on the service contract,
+						else
+						{  
+							terminmonths = 3;  //if we have to set term to 3 months because of no term on the service contract,
 					   			updateservcon.term = 3;  //put 3 months in the term field on the service contract
 					   			updateservcon.notificationneeded__c = true;  //set the notification needed field to true so email will go out
-							}  //if the service contract has no term length set the contract to 3 months
-								//contracts group will get an email telling them to fix the term on the service contract (workflow rule)
+						}  	//if the service contract has no term length set the contract to 3 months
+							//contracts group will get an email telling them to fix the term on the service contract (workflow rule)
 					
-				  			Date conenddate = constartdate.addMonths(terminmonths);
-				  			updateservcon.startdate = constartdate;
-				  	
-				  			//if the service contract is not a legacy, only add the end date if the end date is null
-				  			//once an end date is on the service contract, we don't change it unless it is a legacy contract
-				  			if(entl.ServiceContract.enddate == null && !legacynames.contains(entl.servicecontract.name))
+				  		Date conenddate = constartdate.addMonths(terminmonths);
+				  		updateservcon.startdate = constartdate;
+
+						//shawks 20190830: BUG-00947 - If contract getting start date for first time "true up" the service contract end date
+						if(mpnewconstartdt.containskey(entl.subscription__r.sbqq__contract__c) && !legacynames.contains(entl.servicecontract.name))
 				  			{  updateservcon.enddate = conenddate;  }
 				  	
+				  		//if the service contract is not a legacy, only add the end date if the end date is null
+				  		//once an end date is on the service contract, we don't change it unless it is a legacy contract
+				  		if(entl.ServiceContract.enddate == null && !legacynames.contains(entl.servicecontract.name))
+				  			{  updateservcon.enddate = conenddate;  }
 				  			//shawks - BUG-00574: Move below -> lstupdsc.add(updateservcon);
-				  		}
-				  		else
-				  		{
-				  			system.debug('line 228--service contract start date is null but contract start date was not found.');
-				  		}
+				  	}
+				  	else
+				  	{
+				  		system.debug('line 228--service contract start date is null but contract start date was not found.');
+				  	}
 		
 			
 				//if the service contract is a legacy type and the contract end date is being pushed out,
